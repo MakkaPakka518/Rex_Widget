@@ -1,6 +1,6 @@
 // 七色番 · Rex。站点页面约定参考 Yswag/xptv-extensions 的 js/7sefun.js。
 WidgetMetadata = {
-  id: 'makkapakka.7sefun', title: '七色番', author: 'MakkaPakka518', version: '1.0.0', requiredVersion: '0.0.1',
+  id: 'makkapakka.7sefun', title: '七色番', author: 'MakkaPakka518', version: '1.0.1', requiredVersion: '0.0.1',
   description: '番剧分类、搜索、选集与多线路播放，可设置全站前缀反代。', site:'https://www.7sefun.top', detailCacheDuration:0,
   globalParams:[{name:'proxy',title:'反代根地址（可选）',type:'input',value:'',description:'填写后使用「反代根地址/完整目标网址」，不回退直连。反代须中转重定向并支持 Range。'}],
   modules:[{id:'catalog',title:'分类片库',functionName:'loadList',cacheDuration:0,params:[
@@ -15,7 +15,7 @@ WidgetMetadata = {
 
 const SITE='https://www.7sefun.top', UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36';
 const PROXY_KEY='7sefun.proxy';
-const IMAGE_HEADERS={'User-Agent':UA,Referer:SITE+'/'};
+const IMAGE_HEADERS={'User-Agent':UA,Referer:SITE+'/'},MEDIA_HEADERS={'User-Agent':UA};
 function clean(s){return String(s==null?'':s).trim();}
 function positive(x){return /^[1-9]\d*$/.test(String(x));}
 function http(s){return /^https?:\/\/[a-z\d.-]+(?::\d+)?(?:[/?#][^\s\\]*)?$/i.test(s);}
@@ -25,12 +25,15 @@ function prefix(value){
   if(!/^https?:\/\/[a-z\d.-]+(?::\d+)?(?:\/[\w.~-]+)*$/i.test(p)||/(?:^|\/)\.{1,2}(?:\/|$)/.test(p))throw Error('请填写有效的反代根地址，不要包含查询参数');
   return p+'/';
 }
+async function storeGet(){const s=Widget.storage;if(!s)return undefined;if(typeof s.getItem==='function')return await s.getItem(PROXY_KEY);if(typeof s.get==='function')return await s.get(PROXY_KEY);return undefined;}
+async function storeSet(v){const s=Widget.storage;if(!s)return;if(typeof s.setItem==='function'){await s.setItem(PROXY_KEY,v);return;}if(typeof s.set==='function')await s.set(PROXY_KEY,v);}
 async function setting(params, required){
-  if(params && params.proxy!=null){const p=prefix(params.proxy);if(required&&!p)throw Error('该条目使用反代，请刷新片库');await Widget.storage.set(PROXY_KEY,p);return p;}
-  const p=prefix(await Widget.storage.get(PROXY_KEY));
+  if(params && params.proxy!=null){const p=prefix(params.proxy);if(required&&!p)throw Error('该条目使用反代，请刷新片库');await storeSet(p);return p;}
+  const p=prefix(await storeGet());
   if(required&&!p)throw Error('反代配置缺失，请刷新片库；已停止请求');
   return p;
 }
+function target(arg){if(typeof arg==='string')return {value:arg,params:{}};if(arg&&typeof arg==='object')return {value:arg.link!=null?arg.link:arg.id,params:arg};return {value:undefined,params:{}};}
 function via(p,u){if(!http(u))throw Error('无效的资源地址');return !p||u.startsWith(p)?u:p+u;}
 function image(p,u){u=clean(u);if(u.startsWith('//'))u='https:'+u;else if(u.startsWith('/'))u=SITE+u;return http(u)?via(p,u):'';}
 async function get(p,u,referer){
@@ -87,7 +90,7 @@ function selected(k,params,series){
   if(clean(params.episodeName))return series.episodes.find(e=>e.label===clean(params.episodeName));
   return series.episodes.length===1?series.episodes[0]:null;
 }
-async function loadDetail(link){const k=owned(link);if(!k)return null;const p=await setting(null,k.proxy),series=await show(k,p);if(!k.sid)return series.item;
+async function loadDetail(arg){const {value}=target(arg);const k=owned(value);if(!k)return null;const p=await setting(null,k.proxy),series=await show(k,p);if(!k.sid)return series.item;
   const ep=selected(k,{},series);return ep?series.item.episodeItems[series.episodes.indexOf(ep)]:null;
 }
 
@@ -146,11 +149,11 @@ async function checkHLS(proxy,entry,seen=new Set()){
   }
   if(!master&&!end)throw Error('反代模式下仅支持可预检的点播清单');for(const sub of children)await checkHLS(proxy,sub,seen);
 }
-async function loadResource(params={}){
-  const k=owned(params.link!=null?params.link:params.id);if(!k)return [];
+async function loadResource(arg={}){
+  const {value,params}=target(arg);const k=owned(value);if(!k)return [];
   const p=await setting(params,k.proxy),series=await show(k,p),ep=selected(k,params,series);if(!ep)return [];
   const results=await Promise.all(ep.tracks.map(async t=>{try{const raw=await resolveTrack(k,t,p);if(!raw)return null;const url=via(p,raw);if(p&&/\.m3u8$/i.test(raw.split(/[?#]/)[0]))await checkHLS(p,url);
-    return {name:t.line,description:ep.label,url,customHeaders:{'User-Agent':UA,Referer:SITE+t.path},playerType:'app'};
+    return {name:t.line,description:ep.label,url,customHeaders:MEDIA_HEADERS,headers:MEDIA_HEADERS,playerType:'app'};
   }catch(error){return {error:clean(error.message)||'播放线路请求失败'};}}));
   const ok=results.filter(r=>r&&r.url);if(!ok.length){const err=results.find(r=>r&&r.error);if(err)throw Error(err.error);}return ok;
 }

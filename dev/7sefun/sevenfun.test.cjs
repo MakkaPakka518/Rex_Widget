@@ -23,7 +23,11 @@ test('episode identity follows the label across reordered lines; parser content 
     [site+'/addons/dp/player/index.php?key=0&id=25&uid=0&from=ndx&url=ali_abc']:`location.href="/addons/dp/player/art.php?ticket=x";`,[site+'/addons/dp/player/art.php?ticket=x']:`var config={"url":"${mediaB}", "ignored":(function(){throw Error()})()};`};
   const {ctx,calls,store}=runtime(Object.fromEntries(Object.entries(routes).map(([k,v])=>[proxy+k,v])));store.set('7sefun.proxy',proxy);const d=await ctx.loadDetail('7sefun:tv:25:via');
   assert.deepEqual(Array.from(d.episodeItems,e=>e.title),['第01集','第02集','SP']);assert.equal(d.description,'简介');assert.equal(d.title,'片名');assert.equal(d.posterPath,proxy+'https://images.example/p.jpg');
-  const resources=await ctx.loadResource({link:d.episodeItems[1].link});assert.deepEqual(Array.from(resources,s=>[s.name,s.url]),[['A线',proxy+mediaA],['B线',proxy+mediaB]]);assert.ok(calls.every(([u])=>u.startsWith(proxy)));
+  assert.equal((await ctx.loadDetail({link:'7sefun:tv:25:via'})).title,'片名');
+  const resources=await ctx.loadResource({link:d.episodeItems[1].link});assert.deepEqual(Array.from(resources,s=>[s.name,s.url]),[['A线',proxy+mediaA],['B线',proxy+mediaB]]);
+  const byString=await ctx.loadResource('7sefun:tv:25:1:2:via');assert.deepEqual(Array.from(byString,s=>[s.name,s.url]),[['A线',proxy+mediaA],['B线',proxy+mediaB]]);
+  for(const s of [...resources,...byString]){assert.equal(s.headers['User-Agent'],'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36');assert.equal(s.customHeaders.Referer,undefined);assert.equal(s.headers.Referer,undefined);}
+  assert.ok(calls.every(([u])=>u.startsWith(proxy)));
 });
 test('foreign IDs, missing proxy and failed relay never trigger direct fallback; direct is explicitly supported',async()=>{
   const url=site+'/vodshow/1--time------1---.html';const {ctx,calls}=runtime({[url]:cards,[proxy+url]:{status:302,data:'redirect'}});
@@ -53,4 +57,13 @@ test('movie details and selected season episodes do not silently use another epi
   const {ctx,calls}=runtime({[url]:movie,[site+'/vodplay/25-1-1.html']:play(1,1,'videojs',v,0)});
   assert.equal((await ctx.loadResource({link:'7sefun:movie:25',episode:1}))[0].url,v);
   const n=calls.length;assert.equal((await ctx.loadResource({link:'7sefun:tv:25:2:9'})).length,0);assert.equal(calls.length,n+1);
+});
+test('host storage exposing only async getItem/setItem works for both read and write',async()=>{
+  const u=site+'/voddetail/25.html',v='https://videos.example/movie.mp4',movie=detail.slice(0,detail.indexOf('<div class="chat-header">'))+group('正片',1,[[1,'HD高清']]);
+  const calls=[],mem=new Map(),store={async getItem(k){return mem.get(k)},async setItem(k,val){mem.set(k,val)}};
+  const ctx={console,Widget:{html:{load},storage:store,http:{get:async(url)=>{calls.push(url);return {data:url===proxy+u?movie:play(1,1,'videojs',v,0),status:200};}}}};
+  vm.runInNewContext(src,ctx);
+  const r=await ctx.loadResource({link:'7sefun:movie:25',episode:1,proxy:proxy.slice(0,-1)});
+  assert.equal(r[0].url,proxy+v);assert.equal(mem.get('7sefun.proxy'),proxy);
+  assert.equal((await ctx.loadDetail('7sefun:movie:25:via')).title,'片名');assert.ok(calls.every(x=>x.startsWith(proxy)));
 });

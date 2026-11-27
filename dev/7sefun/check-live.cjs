@@ -11,6 +11,11 @@ async function sample(url,headers){routed(url);const r=await fetch(url,{headers:
   const search=await ctx.search({keyword:'海贼王',page:1,proxy});assert.ok(search.length);console.log('search',search.length);
   const link='7sefun:tv:38712'+(proxy?':via':'');const show=await ctx.loadDetail(link);assert.ok(show.episodeItems.length>=2);const ep=show.episodeItems.find(e=>e.episode===2);assert.ok(ep);routed(show.posterPath);const cover=await sample(show.posterPath,show.headers);assert.match(cover.kind||'',/^image\//);console.log('cover',cover.status,cover.kind);
   const streams=await ctx.loadResource({link:ep.link,proxy});assert.ok(streams.length);let playable=0;
-  for(const s of streams){const result=await sample(s.url,s.customHeaders);if((result.status===200||result.status===206)&&result.mp4)playable++;console.log('episode',ep.episode,s.name,result);}
-  assert.ok(playable,'no MP4 sample verified');console.log(proxy?'proxy':'direct','module requests',calls.length,'verified mp4',playable);
+  for(const s of streams){assert.equal(s.headers.Referer,undefined,'media headers must not send a site Referer');assert.equal(s.customHeaders.Referer,undefined);const result=await sample(s.url,s.customHeaders);if((result.status===200||result.status===206)&&result.mp4)playable++;console.log('episode',ep.episode,s.name,result);}
+  assert.ok(playable,'no MP4 sample verified');
+  const hit=await ctx.search({keyword:'我真没想重生啊',page:1,proxy});const item=hit.find(x=>x.title.includes('我真没想重生啊'));assert.ok(item,'search target missing');const detail=await ctx.loadDetail(item.link);const ep8=detail.episodeItems.find(e=>e.episode===8);assert.ok(ep8,'episode 8 missing');console.log('search',item.title,'ep8',ep8.link);
+  const ep8streams=await ctx.loadResource({link:ep8.link,proxy});assert.ok(ep8streams.length);let ep8ok=0;
+  for(const s of ep8streams){assert.equal(s.customHeaders.Referer,undefined);const result=await sample(s.url,s.customHeaders);if((result.status===200||result.status===206)&&result.mp4)ep8ok++;console.log('ep8',s.name,result);}
+  assert.ok(ep8ok,'search episode 8 MP4 sample not verified');
+  console.log(proxy?'proxy':'direct','module requests',calls.length,'verified mp4',playable,'ep8',ep8ok);
 })().catch(e=>{console.error(e.message);process.exitCode=1;});
